@@ -4,7 +4,8 @@ class EspWebInstallButton extends HTMLElement {
     this.attachShadow({ mode: "open" });
   }
   async connectedCallback() {
-    const manifestUrl = this.getAttribute("manifest");
+    // Erzwingt, dass das Manifest bei jeder Abfrage frisch geladen wird
+    const manifestUrl = this.getAttribute("manifest") + "?v=" + Math.random();
     this.shadowRoot.innerHTML = `
       <style>
         button {
@@ -36,31 +37,38 @@ class EspWebInstallButton extends HTMLElement {
         const port = await navigator.serial.requestPort();
         
         statusDiv.innerText = "Verbinde mit ESP32-C3...";
-        // Ändere das von 115200 auf 9600 für maximale Kompatibilität beim Verbinden
-        await port.open({ baudRate: 9600 });
+        await port.open({ baudRate: 115200 });
+
+        // Weckt den ESP32-C3 Bootloader auf und signalisiert eine Datenübertragung
+        const writer = port.writable.getWriter();
+        
+        statusDiv.innerText = "Bereite Flash-Speicher vor (Reset)...";
+        // Aktiviert DTR/RTS Signale um den Chip in den Schreibmodus zu versetzen
+        await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await port.setSignals({ dataTerminalReady: true, requestToSend: false });
 
         statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
-        const response = await fetch(manifestUrl);
-        const manifest = await response.json();
-        
-        // Holt den Pfad der Firmware aus der JSON
         let firmwarePath = "firmware.bin";
-        if (manifest.builds && manifest.builds[0] && manifest.builds[0].parts && manifest.builds[0].parts[0]) {
-          firmwarePath = manifest.builds[0].parts[0].path;
+        try {
+          const response = await fetch(manifestUrl);
+          const manifest = await response.json();
+          if (manifest.builds && manifest.builds[0] && manifest.builds[0].parts && manifest.builds[0].parts[0]) {
+            firmwarePath = manifest.builds[0].parts[0].path || "firmware.bin";
+          }
+        } catch (jsonErr) {
+          console.warn("Nutze Standardpfad:", jsonErr);
         }
 
         statusDiv.innerText = `Lade Firmware-Datei (${firmwarePath})...`;
-        const fwResponse = await fetch(firmwarePath);
+        const fwResponse = await fetch(firmwarePath + "?v=" + Math.random());
         if (!fwResponse.ok) throw new Error("Firmware-Datei konnte nicht geladen werden.");
         const fwBuffer = await fwResponse.arrayBuffer();
         const data = new Uint8Array(fwBuffer);
 
-        statusDiv.innerText = "💥 Flashen gestartet... Bereite Datenübertragung vor...";
+        statusDiv.innerText = "💥 Flashen gestartet... Schreibe Blöcke...";
         btn.disabled = true;
 
-        const writer = port.writable.getWriter();
-        
-        // Wir senden die Binärdaten in kleinen, verdaulichen Paketen (Chunks) an den ESP32-C3
         const chunkSize = 1024;
         for (let i = 0; i < data.length; i += chunkSize) {
           const chunk = data.slice(i, i + chunkSize);
@@ -70,10 +78,14 @@ class EspWebInstallButton extends HTMLElement {
           statusDiv.innerText = `⚡ Schreibe Firmware: ${prozent}%... Bitte warten.`;
         }
 
+        // Signalisiert das Ende der Übertragung und startet den ESP neu
+        statusDiv.innerText = "Starte ESP32-C3 neu...";
+        await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+        
         writer.releaseLock();
         await port.close();
 
-        statusDiv.innerText = "✅ Erfolgreich geflasht! Du kannst das Kabel jetzt trennen.";
+        statusDiv.innerText = "✅ Erfolgreich geflasht! Projekt startet jetzt.";
         btn.disabled = false;
         alert("Das Live-Score Display wurde erfolgreich programmiert!");
 
