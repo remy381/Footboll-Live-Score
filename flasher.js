@@ -36,7 +36,8 @@ class EspWebInstallButton extends HTMLElement {
         const port = await navigator.serial.requestPort();
         
         statusDiv.innerText = "Verbinde mit ESP32-C3...";
-        await port.open({ baudRate: 115200 });
+        // Ändere das von 115200 auf 9600 für maximale Kompatibilität beim Verbinden
+        await port.open({ baudRate: 9600 });
 
         statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
         const response = await fetch(manifestUrl);
