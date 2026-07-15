@@ -1,2 +1,15 @@
-/* ESP-Web-Tools Bootstrapper */
-import"https://unpkg.com";import"https://unpkg.com";import"https://unpkg.com";class EspWebInstallButton extends HTMLElement{async connectedCallback(){const{EspWebInstallButton:e}=await import("https://unpkg.com");const t=new e;t.manifest=this.getAttribute("manifest"),this.shadowRoot?this.shadowRoot.appendChild(t):(this.attachShadow({mode:"open"}),this.shadowRoot.appendChild(t))}}customElements.define("esp-web-install-button",EspWebInstallButton);
+class EspWebInstallButton extends HTMLElement {
+  async connectedCallback() {
+    // Lädt das Skript direkt über ein alternatives, blockadesicheres CDN
+    const { EspWebInstallButton: Button } = await import("https://esm.run");
+    const instance = new Button();
+    instance.manifest = this.getAttribute("manifest");
+    
+    // Buttons in den Shadow DOM einfügen
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+    }
+    this.shadowRoot.appendChild(instance);
+  }
+}
+customElements.define("esp-web-install-button", EspWebInstallButton);
