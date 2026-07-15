@@ -8,36 +8,68 @@ class EspWebInstallButton extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         button {
-          background-color: #4CAF50;
-          color: white;
-          padding: 12px 24px;
-          font-size: 16px;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: bold;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-          transition: background 0.2s;
+          background-color: #4CAF50; color: white; padding: 14px 28px;
+          font-size: 16px; border: none; border-radius: 8px;
+          cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+          transition: all 0.2s;
         }
-        button:hover { background-color: #45a049; }
+        button:hover { background-color: #45a049; transform: scale(1.02); }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        #status { margin-top: 15px; font-weight: bold; color: #4CAF50; font-size: 0.95em; }
       </style>
-      <button id="btn">🔌 Mit ESP32-C3 verbinden</button>
+      <button id="btn">🔌 ESP32-C3 Programmieren (Flashen)</button>
+      <div id="status"></div>
     `;
     
-    this.shadowRoot.getElementById("btn").addEventListener("click", async () => {
+    const btn = this.shadowRoot.getElementById("btn");
+    const statusDiv = this.shadowRoot.getElementById("status");
+
+    btn.addEventListener("click", async () => {
       if (!("serial" in navigator)) {
-        alert("Fehler: Dein Browser unterstützt kein WebSerial. Bitte nutze Google Chrome oder Microsoft Edge auf einem PC/Mac.");
+        alert("Fehler: Dein Browser unterstützt kein WebSerial. Bitte nutze Google Chrome oder Microsoft Edge.");
         return;
       }
+
       try {
+        statusDiv.innerText = "Lade Installer-Modul...";
+        // Lädt das offizielle ESP-Web-Tools Modul direkt als ES-Modul
+        const { ESPLoader } = await import("https://unpkg.com");
+        
+        statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
         const port = await navigator.serial.requestPort();
-        await port.open({ baudRate: 115200 });
-        alert("Erfolgreich mit dem ESP32-C3 verbunden! Das Flashen wird über das Manifest '" + manifestUrl + "' gestartet.");
-        // Verbindung steht, Übergabe an den Web-Standard-Flasher
+        
+        statusDiv.innerText = "Verbinde mit ESP32-C3...";
+        const transport = new transport.Transport(port);
+        const esploader = new ESPLoader(transport, 115200, null);
+        await esploader.main();
+
+        statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
+        const response = await fetch(manifestUrl);
+        const manifest = await response.json();
+        const firmwarePath = manifest.builds[0].parts[0].path;
+
+        statusDiv.innerText = "Lade Firmware-Datei (" + firmwarePath + ")...";
+        const fwResponse = await fetch(firmwarePath);
+        const fwBuffer = await fwResponse.arrayBuffer();
+
+        statusDiv.innerText = "💥 Flashen gestartet! Bitte das Browserfenster NICHT schließen...";
+        btn.disabled = true;
+
+        // Schreibt die Firmware auf die Adresse 0x0 für den ESP32-C3
+        await esploader.writeFlash([{ data: new Uint8Array(fwBuffer), address: 0x0 }]);
+
+        statusDiv.innerText = "✅ Erfolgreich geflasht! Du kannst das Kabel jetzt trennen.";
+        btn.disabled = false;
+        alert("Das Live-Score Display wurde erfolgreich programmiert!");
+
       } catch (err) {
-        alert("Verbindung abgebrochen oder fehlgeschlagen: " + err.message);
+        btn.disabled = false;
+        statusDiv.style.color = "#ff9800";
+        statusDiv.innerText = "Fehler: " + err.message;
+        console.error(err);
       }
     });
   }
 }
 customElements.define("esp-web-install-button", EspWebInstallButton);
+
