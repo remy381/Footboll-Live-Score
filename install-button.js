@@ -1,11 +1,10 @@
 class EspWebInstallButton extends HTMLElement {
   async connectedCallback() {
-    // Lädt das Skript direkt über ein alternatives, blockadesicheres CDN
-    const { EspWebInstallButton: Button } = await import("https://esm.run");
+    // Holt sich den Installer direkt und sicher von der offiziellen ESPHome-Infrastruktur
+    const { EspWebInstallButton: Button } = await import("https://github.io");
     const instance = new Button();
     instance.manifest = this.getAttribute("manifest");
     
-    // Buttons in den Shadow DOM einfügen
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
