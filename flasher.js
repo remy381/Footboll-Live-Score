@@ -4,8 +4,6 @@ class EspWebInstallButton extends HTMLElement {
     this.attachShadow({ mode: "open" });
   }
   async connectedCallback() {
-    // Erzwingt, dass das Manifest bei jeder Abfrage frisch geladen wird
-    const manifestUrl = this.getAttribute("manifest") + "?v=" + Math.random();
     this.shadowRoot.innerHTML = `
       <style>
         button {
@@ -31,61 +29,33 @@ class EspWebInstallButton extends HTMLElement {
         return;
       }
 
+      let esptool;
       try {
         statusDiv.style.color = "#4CAF50";
         statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
-        const port = await navigator.serial.requestPort();
         
-        statusDiv.innerText = "Verbinde mit ESP32-C3...";
-        await port.open({ baudRate: 115200 });
-
-        // Weckt den ESP32-C3 Bootloader auf und signalisiert eine Datenübertragung
-        const writer = port.writable.getWriter();
+        // Initialisiert den Adafruit-Flasher über die WebSerial-Schnittstelle
+        esptool = new window.EspTool();
+        await esptool.connect();
         
-        statusDiv.innerText = "Bereite Flash-Speicher vor (Reset)...";
-        // Aktiviert DTR/RTS Signale um den Chip in den Schreibmodus zu versetzen
-        await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-        await new Promise(resolve => setTimeout(resolve, 100));
-        await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+        statusDiv.innerText = "Verbindung erfolgreich! Synchronisiere mit ESP32-C3...";
+        await esptool.sync();
 
-        statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
-        let firmwarePath = "firmware.bin";
-        try {
-          const response = await fetch(manifestUrl);
-          const manifest = await response.json();
-          if (manifest.builds && manifest.builds[0] && manifest.builds[0].parts && manifest.builds[0].parts[0]) {
-            firmwarePath = manifest.builds[0].parts[0].path || "firmware.bin";
-          }
-        } catch (jsonErr) {
-          console.warn("Nutze Standardpfad:", jsonErr);
-        }
-
-        statusDiv.innerText = `Lade Firmware-Datei (${firmwarePath})...`;
-        const fwResponse = await fetch(firmwarePath + "?v=" + Math.random());
-        if (!fwResponse.ok) throw new Error("Firmware-Datei konnte nicht geladen werden.");
+        statusDiv.innerText = "Lade Firmware-Datei (firmware.bin)...";
+        const fwResponse = await fetch("firmware.bin?v=" + Math.random());
+        if (!fwResponse.ok) throw new Error("firmware.bin im Hauptverzeichnis nicht gefunden.");
         const fwBuffer = await fwResponse.arrayBuffer();
-        const data = new Uint8Array(fwBuffer);
 
-        statusDiv.innerText = "💥 Flashen gestartet... Schreibe Blöcke...";
+        statusDiv.innerText = "💥 Flashen gestartet... Speicher wird überschrieben!";
         btn.disabled = true;
 
-        const chunkSize = 1024;
-        for (let i = 0; i < data.length; i += chunkSize) {
-          const chunk = data.slice(i, i + chunkSize);
-          await writer.write(chunk);
-          
-          const prozent = Math.min(100, Math.round(((i + chunk.length) / data.length) * 100));
-          statusDiv.innerText = `⚡ Schreibe Firmware: ${prozent}%... Bitte warten.`;
-        }
+        // Flasht die Firmware an die Adresse 0x0 (Standard für Arduino-Zusammenführungen beim ESP32-C3)
+        await esptool.write_flash([{ data: new Uint8Array(fwBuffer), address: 0x0 }]);
 
-        // Signalisiert das Ende der Übertragung und startet den ESP neu
-        statusDiv.innerText = "Starte ESP32-C3 neu...";
-        await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+        statusDiv.innerText = "Resetten und Neustarten des ESP32-C3...";
+        await esptool.hard_reset();
         
-        writer.releaseLock();
-        await port.close();
-
-        statusDiv.innerText = "✅ Erfolgreich geflasht! Projekt startet jetzt.";
+        statusDiv.innerText = "✅ Erfolgreich geflasht! Das neue Projekt läuft jetzt.";
         btn.disabled = false;
         alert("Das Live-Score Display wurde erfolgreich programmiert!");
 
@@ -94,6 +64,7 @@ class EspWebInstallButton extends HTMLElement {
         statusDiv.style.color = "#ff9800";
         statusDiv.innerText = "Fehler: " + err.message;
         console.error(err);
+        if (esptool) await esptool.disconnect();
       }
     });
   }
