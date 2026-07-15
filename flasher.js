@@ -32,36 +32,45 @@ class EspWebInstallButton extends HTMLElement {
 
       try {
         statusDiv.style.color = "#4CAF50";
-        statusDiv.innerText = "Lade Installer-Modul von ESPHome...";
-        
-        // Lädt den Installer von der unblockbaren ESPHome-Infrastruktur
-        const { ESPLoader } = await import("https://github.io");
-        
         statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
         const port = await navigator.serial.requestPort();
         
         statusDiv.innerText = "Verbinde mit ESP32-C3...";
-        // Holt sich das Transport-Modul direkt aus dem geladenen Paket
-        const transport = new (window.Transport || (await import("https://github.io")).Transport)(port);
-        const esploader = new ESPLoader(transport, 115200, null);
-        await esploader.main();
+        await port.open({ baudRate: 115200 });
 
         statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
         const response = await fetch(manifestUrl);
         const manifest = await response.json();
         
-        // Holt den Pfad dynamisch aus der JSON-Struktur
-        const firmwarePath = manifest.builds[0].parts[0].path;
+        // Holt den Pfad der Firmware aus der JSON
+        let firmwarePath = "firmware.bin";
+        if (manifest.builds && manifest.builds[0] && manifest.builds[0].parts && manifest.builds[0].parts[0]) {
+          firmwarePath = manifest.builds[0].parts[0].path;
+        }
 
         statusDiv.innerText = `Lade Firmware-Datei (${firmwarePath})...`;
         const fwResponse = await fetch(firmwarePath);
+        if (!fwResponse.ok) throw new Error("Firmware-Datei konnte nicht geladen werden.");
         const fwBuffer = await fwResponse.arrayBuffer();
+        const data = new Uint8Array(fwBuffer);
 
-        statusDiv.innerText = "💥 Flashen gestartet! Bitte das Browserfenster NICHT schließen...";
+        statusDiv.innerText = "💥 Flashen gestartet... Bereite Datenübertragung vor...";
         btn.disabled = true;
 
-        // Schreibt die Firmware auf die Adresse 0x0
-        await esploader.writeFlash([{ data: new Uint8Array(fwBuffer), address: 0x0 }]);
+        const writer = port.writable.getWriter();
+        
+        // Wir senden die Binärdaten in kleinen, verdaulichen Paketen (Chunks) an den ESP32-C3
+        const chunkSize = 1024;
+        for (let i = 0; i < data.length; i += chunkSize) {
+          const chunk = data.slice(i, i + chunkSize);
+          await writer.write(chunk);
+          
+          const prozent = Math.min(100, Math.round(((i + chunk.length) / data.length) * 100));
+          statusDiv.innerText = `⚡ Schreibe Firmware: ${prozent}%... Bitte warten.`;
+        }
+
+        writer.releaseLock();
+        await port.close();
 
         statusDiv.innerText = "✅ Erfolgreich geflasht! Du kannst das Kabel jetzt trennen.";
         btn.disabled = false;
@@ -77,4 +86,3 @@ class EspWebInstallButton extends HTMLElement {
   }
 }
 customElements.define("esp-web-install-button", EspWebInstallButton);
-
