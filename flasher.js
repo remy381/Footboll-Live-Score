@@ -15,7 +15,7 @@ class EspWebInstallButton extends HTMLElement {
         }
         button:hover { background-color: #45a049; transform: scale(1.02); }
         button:disabled { background-color: #555; cursor: not-allowed; }
-        #status { margin-top: 15px; font-weight: bold; color: #4CAF50; font-size: 0.95em; }
+        #status { margin-top: 15px; font-weight: bold; color: #4CAF50; font-size: 0.95em; line-height: 1.4; }
       </style>
       <button id="btn">🔌 ESP32-C3 Programmieren (Flashen)</button>
       <div id="status"></div>
@@ -31,31 +31,36 @@ class EspWebInstallButton extends HTMLElement {
       }
 
       try {
-        statusDiv.innerText = "Lade Installer-Modul...";
-        // Lädt das offizielle ESP-Web-Tools Modul direkt als ES-Modul
-        const { ESPLoader } = await import("https://unpkg.com");
+        statusDiv.style.color = "#4CAF50";
+        statusDiv.innerText = "Lade Installer-Modul von ESPHome...";
+        
+        // Lädt den Installer von der unblockbaren ESPHome-Infrastruktur
+        const { ESPLoader } = await import("https://github.io");
         
         statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
         const port = await navigator.serial.requestPort();
         
         statusDiv.innerText = "Verbinde mit ESP32-C3...";
-        const transport = new transport.Transport(port);
+        // Holt sich das Transport-Modul direkt aus dem geladenen Paket
+        const transport = new (window.Transport || (await import("https://github.io")).Transport)(port);
         const esploader = new ESPLoader(transport, 115200, null);
         await esploader.main();
 
         statusDiv.innerText = "Lese Konfiguration (manifest.json)...";
         const response = await fetch(manifestUrl);
         const manifest = await response.json();
+        
+        // Holt den Pfad dynamisch aus der JSON-Struktur
         const firmwarePath = manifest.builds[0].parts[0].path;
 
-        statusDiv.innerText = "Lade Firmware-Datei (" + firmwarePath + ")...";
+        statusDiv.innerText = `Lade Firmware-Datei (${firmwarePath})...`;
         const fwResponse = await fetch(firmwarePath);
         const fwBuffer = await fwResponse.arrayBuffer();
 
         statusDiv.innerText = "💥 Flashen gestartet! Bitte das Browserfenster NICHT schließen...";
         btn.disabled = true;
 
-        // Schreibt die Firmware auf die Adresse 0x0 für den ESP32-C3
+        // Schreibt die Firmware auf die Adresse 0x0
         await esploader.writeFlash([{ data: new Uint8Array(fwBuffer), address: 0x0 }]);
 
         statusDiv.innerText = "✅ Erfolgreich geflasht! Du kannst das Kabel jetzt trennen.";
