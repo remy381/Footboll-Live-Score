@@ -37,9 +37,9 @@ class EspWebInstallButton extends HTMLElement {
         const device = await navigator.serial.requestPort();
         statusDiv.innerText = "Verbinde mit Port...";
         
-        // Nutzt den offiziellen Espressif-Paket-Namensraum (esptooljs)
-        const transport = new esptooljs.Transport(device);
-        const esploader = new esptooljs.ESPLoader({
+        // Nutzt die direkt im Bundle bereitgestellten Klassen
+        const transport = new window.Transport(device);
+        const esploader = new window.ESPLoader({
           transport: transport,
           baudrate: 115200,
           terminal: {
