@@ -29,20 +29,24 @@ class EspWebInstallButton extends HTMLElement {
         return;
       }
 
-      let transport;
       try {
         statusDiv.style.color = "#4CAF50";
         statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
         
-        // Öffnet den Port nativ über den Browser
-        const port = await navigator.serial.requestPort();
+        // Öffnet das offizielle WebSerial-Gerät über den Browser
+        const device = await navigator.serial.requestPort();
         statusDiv.innerText = "Verbinde mit Port...";
         
-        // Initialisiert das Adafruit/Espressif Transport- und Loader-Modul
-        transport = new window.Transport(port);
-        const esploader = new window.ESPLoader({
+        // Nutzt den offiziellen Espressif-Paket-Namensraum (esptooljs)
+        const transport = new esptooljs.Transport(device);
+        const esploader = new esptooljs.ESPLoader({
           transport: transport,
-          baudrate: 115200
+          baudrate: 115200,
+          terminal: {
+            clean: () => {},
+            writeLine: (msg) => console.log(msg),
+            write: (msg) => console.log(msg)
+          }
         });
         
         statusDiv.innerText = "Synchronisiere mit ESP32-C3 Bootloader...";
@@ -50,13 +54,13 @@ class EspWebInstallButton extends HTMLElement {
 
         statusDiv.innerText = "Lade Firmware-Datei (firmware.bin)...";
         const fwResponse = await fetch("firmware.bin?v=" + Math.random());
-        if (!fwResponse.ok) throw new Error("firmware.bin im Hauptverzeichnis nicht gefunden.");
+        if (!fwResponse.ok) throw new Error("firmware.bin wurde auf GitHub nicht gefunden.");
         const fwBuffer = await fwResponse.arrayBuffer();
 
-        statusDiv.innerText = "💥 Flashen gestartet... Speicher wird überschrieben!";
+        statusDiv.innerText = "💥 Flashen gestartet! Überschreibe alten Speicher...";
         btn.disabled = true;
 
-        // Nutzt die offizielle Methode zum Löschen und Beschreiben des ESP32-C3 Speichers ab Adresse 0x0
+        // Startet das echte Flashen über die offizielle Herstellermethode
         await esploader.writeFlash({
           fileArray: [{ data: new Uint8Array(fwBuffer), address: 0x0 }],
           reportProgress: (fileIndex, written, total) => {
