@@ -29,17 +29,24 @@ class EspWebInstallButton extends HTMLElement {
         return;
       }
 
-      let esptool;
+      let transport;
       try {
         statusDiv.style.color = "#4CAF50";
         statusDiv.innerText = "Bitte wähle deinen ESP32-C3 im Pop-up aus...";
         
-        // Initialisiert den Adafruit-Flasher über die WebSerial-Schnittstelle
-        esptool = new window.EspTool();
-        await esptool.connect();
+        // Öffnet den Port nativ über den Browser
+        const port = await navigator.serial.requestPort();
+        statusDiv.innerText = "Verbinde mit Port...";
         
-        statusDiv.innerText = "Verbindung erfolgreich! Synchronisiere mit ESP32-C3...";
-        await esptool.sync();
+        // Initialisiert das Adafruit/Espressif Transport- und Loader-Modul
+        transport = new window.Transport(port);
+        const esploader = new window.ESPLoader({
+          transport: transport,
+          baudrate: 115200
+        });
+        
+        statusDiv.innerText = "Synchronisiere mit ESP32-C3 Bootloader...";
+        await esploader.main();
 
         statusDiv.innerText = "Lade Firmware-Datei (firmware.bin)...";
         const fwResponse = await fetch("firmware.bin?v=" + Math.random());
@@ -49,11 +56,17 @@ class EspWebInstallButton extends HTMLElement {
         statusDiv.innerText = "💥 Flashen gestartet... Speicher wird überschrieben!";
         btn.disabled = true;
 
-        // Flasht die Firmware an die Adresse 0x0 (Standard für Arduino-Zusammenführungen beim ESP32-C3)
-        await esptool.write_flash([{ data: new Uint8Array(fwBuffer), address: 0x0 }]);
+        // Nutzt die offizielle Methode zum Löschen und Beschreiben des ESP32-C3 Speichers ab Adresse 0x0
+        await esploader.writeFlash({
+          fileArray: [{ data: new Uint8Array(fwBuffer), address: 0x0 }],
+          reportProgress: (fileIndex, written, total) => {
+            const prozent = Math.round((written / total) * 100);
+            statusDiv.innerText = `⚡ Schreibe Firmware: ${prozent}%... Bitte warten.`;
+          }
+        });
 
         statusDiv.innerText = "Resetten und Neustarten des ESP32-C3...";
-        await esptool.hard_reset();
+        await esploader.hardReset();
         
         statusDiv.innerText = "✅ Erfolgreich geflasht! Das neue Projekt läuft jetzt.";
         btn.disabled = false;
@@ -64,7 +77,6 @@ class EspWebInstallButton extends HTMLElement {
         statusDiv.style.color = "#ff9800";
         statusDiv.innerText = "Fehler: " + err.message;
         console.error(err);
-        if (esptool) await esptool.disconnect();
       }
     });
   }
